@@ -1,6 +1,6 @@
 USTH Machine Learning in Medicine 2026
 ==================================
 
-* Your name here
-* Your ID here
-* Your team ID here
+* Name: Lê Viết Hoàng Lâm
+* ID: 22BI13235
+* Team ID: 4
