@@ -1,0 +1,370 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[english]{babel}
+
+\usepackage{multicol}
+\usepackage[
+  a4paper,
+  left=2.2cm,
+  right=2.2cm,
+  top=2.2cm,
+  bottom=2.4cm,
+  includeheadfoot
+]{geometry}
+
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{placeins}
+\usepackage{caption}
+\usepackage{capt-of}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{setspace}
+\usepackage{microtype}
+\usepackage{titlesec}
+
+\setstretch{1.03}
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1em}
+\setlength{\columnsep}{0.7cm}
+\setlength{\multicolsep}{6pt}
+\setlength{\abovecaptionskip}{4pt}
+\setlength{\belowcaptionskip}{2pt}
+
+\titlespacing*{\section}{0pt}{1.2ex plus 0.2ex minus 0.2ex}{0.7ex}
+\titlespacing*{\subsection}{0pt}{1.0ex plus 0.2ex minus 0.2ex}{0.5ex}
+\titlespacing*{\subsubsection}{0pt}{0.8ex plus 0.2ex minus 0.2ex}{0.4ex}
+
+\hyphenpenalty=8000
+\exhyphenpenalty=8000
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray}
+}
+
+\newcommand{\ColTable}[3]{%
+\begin{center}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\captionof{table}{#2}\label{#3}
+\resizebox{\linewidth}{!}{#1}
+\end{center}
+\FloatBarrier
+\normalsize
+\setlength{\tabcolsep}{6pt}
+}
+
+\title{\textbf{Practical Work 2: Fetal Head Circumference Measurement\\using Ultrasound Imaging (HC18)}}
+\author{
+    Le Viet Hoang Lam \\
+    Student ID: 22BI13235 \\
+    ICT Department, USTH
+}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\begin{multicols}{2}
+\raggedcolumns
+
+\section{Introduction}
+
+\subsection{Background}
+Fetal head circumference (HC) is an important biometric measurement used in prenatal ultrasound examinations to assess fetal growth and detect potential abnormalities. Manual HC measurement is time-consuming and subject to inter- and intra-observer variability. This practical work builds an automated regression model that predicts HC from 2D ultrasound images.
+
+\subsection{Objectives}
+The objectives of this practical work are:
+\begin{itemize}
+    \item Explore and analyze the HC18 ultrasound dataset
+    \item Extract HC labels from annotation images
+    \item Develop a regression model to predict HC from ultrasound images
+    \item Evaluate performance using Mean Absolute Error (MAE)
+    \item Experiment with multiple hyperparameter configurations
+\end{itemize}
+
+\section{Dataset Description}
+
+\subsection{Dataset Overview}
+The HC18 (Head Circumference 18) dataset consists of fetal head ultrasound images with corresponding annotation images in the training set. In our pipeline, HC labels are extracted from the annotation images by estimating the contour perimeter (ellipse-like) in \textbf{pixel units}.
+
+\textbf{Dataset Statistics (from exploration):}
+\begin{itemize}
+    \item Training images: \textbf{806}
+    \item Test images: \textbf{335}
+    \item Training annotations: \textbf{806}
+    \item Example image dimension: \textbf{540 $\times$ 800} pixels (grayscale, uint8)
+    \item HC label range (pixels): \textbf{444.56 -- 1791.88}
+    \item Mean HC (pixels): \textbf{1273.89} $\pm$ \textbf{267.91}
+\end{itemize}
+
+\subsection{Data Distribution}
+Figure \ref{fig:dataset_exploration} shows the distribution of HC values and example images/annotations.
+
+\begin{center}
+    \includegraphics[width=\linewidth]{../outputs/figures/dataset_exploration.png}
+    \captionof{figure}{Dataset exploration: HC distribution and example training images with annotations.}
+    \label{fig:dataset_exploration}
+\end{center}
+\FloatBarrier
+
+\subsection{Data Quality}
+\begin{itemize}
+    \item Missing values: \textbf{0}
+    \item Potential outliers (IQR method): \textbf{10} samples
+\end{itemize}
+
+\section{Methodology}
+
+\subsection{Label Extraction from Annotations}
+The HC18 dataset provides training annotations as images. HC is computed from annotation masks by:
+\begin{enumerate}
+    \item Loading the annotation image and thresholding to isolate the contour
+    \item Finding the largest contour (head boundary)
+    \item Estimating HC using the contour perimeter (and ellipse fit when possible)
+\end{enumerate}
+This yields HC in \textbf{pixels}. Converting to \textbf{mm} requires pixel spacing metadata (mm/pixel), which is not used in the current notebook run.
+
+\subsection{Data Preprocessing}
+
+\subsubsection{Train-Validation-Test Split}
+The dataset was split into:
+\begin{itemize}
+    \item Training: \textbf{70\%} (564 images)
+    \item Validation: \textbf{15\%} (121 images)
+    \item Test: \textbf{15\%} (121 images)
+\end{itemize}
+
+\subsubsection{Image Preprocessing}
+All ultrasound images were preprocessed as follows:
+\begin{enumerate}
+    \item Resize to \textbf{224 $\times$ 224}
+    \item Normalize pixel intensities to \textbf{[0, 1]}
+    \item Expand channel dimension to shape \textbf{(224, 224, 1)}
+\end{enumerate}
+
+\begin{center}
+    \includegraphics[width=\linewidth]{../outputs/figures/preprocessing_visualization.png}
+    \captionof{figure}{Preprocessing visualization: original images vs.\ resized/normalized images.}
+    \label{fig:preprocessing}
+\end{center}
+\FloatBarrier
+
+\subsubsection{Label Normalization}
+For stable training, the labels were normalized using training-set statistics:
+\[
+y_{\text{norm}} = \frac{y - \mu}{\sigma},
+\]
+where $\mu = 1275.67$ and $\sigma = 265.04$ (pixels).
+
+\subsubsection{Data Augmentation}
+To reduce overfitting, data augmentation was applied:
+\begin{itemize}
+    \item Rotation: $\pm 15^\circ$
+    \item Width/height shift: $\pm 10\%$
+    \item Zoom: up to $15\%$
+    \item Horizontal flip
+\end{itemize}
+
+\begin{center}
+    \includegraphics[width=\linewidth]{../outputs/figures/data_augmentation.png}
+    \captionof{figure}{Examples of augmented training images.}
+    \label{fig:augmentation}
+\end{center}
+\FloatBarrier
+
+\subsection{Model Architecture}
+A CNN regression model was used with the following layers:
+\begin{itemize}
+    \item Conv(32, $3\times3$) + MaxPool
+    \item Conv(64, $3\times3$) + MaxPool
+    \item Conv(128, $3\times3$) + MaxPool
+    \item Flatten
+    \item Dense(256) + Dropout(0.5)
+    \item Dense(128) + Dropout(0.3)
+    \item Dense(1) output
+\end{itemize}
+
+\textbf{Loss:} MAE \\
+\textbf{Optimizer:} Adam (default learning rate) \\
+\textbf{Total parameters:} \textbf{22,277,121}
+
+\subsection{Training Strategy}
+
+\subsubsection{Training Configuration}
+\begin{itemize}
+    \item Batch size: 32
+    \item Max epochs: 100
+    \item Callbacks:
+    \begin{itemize}
+        \item ModelCheckpoint (best model by validation MAE)
+        \item EarlyStopping (patience = 15, restore best weights)
+        \item ReduceLROnPlateau (factor = 0.5, patience = 5)
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Training Process}
+The model stopped early after reaching the best validation MAE at epoch \textbf{14}. Training curves are shown in Figure \ref{fig:training_history}.
+
+\begin{center}
+    \includegraphics[width=\linewidth]{../outputs/figures/training_history.png}
+    \captionof{figure}{Training history: MAE and loss curves (and LR schedule if tracked).}
+    \label{fig:training_history}
+\end{center}
+\FloatBarrier
+
+Best validation MAE:
+\begin{itemize}
+    \item Normalized scale: \textbf{0.3137}
+    \item Denormalized (pixels): \textbf{83.1316 pixels}
+\end{itemize}
+
+\section{Experiments}
+
+\subsection{Hyperparameter Tuning}
+To satisfy the requirement of experimenting with multiple settings, we evaluated 10 configurations varying:
+\begin{itemize}
+    \item Learning rate: \{0.001, 0.0001, 0.00001\}
+    \item Batch size: \{16, 32, 64\}
+    \item Dropout: \{0.3, 0.5, 0.7\}
+    \item Optimizer: \{Adam, SGD, RMSprop\}
+    \item Architecture: \{Simple CNN, Deep CNN\}
+\end{itemize}
+
+\textbf{Note:} These experiments used a shorter training schedule (up to 50 epochs, early stopping) and trained directly on \textbf{pixel labels} for speed; therefore, the experiment MAE values are reported in \textbf{pixels} and are not directly comparable to the final normalized-label training run.
+
+\subsection{Experimental Results}
+Table \ref{tab:hyperparameters} reports the top 5 configurations (lowest validation MAE in pixels).
+
+\ColTable{%
+\begin{tabular}{ccccccc}
+\toprule
+\textbf{ExpID} & \textbf{LR} & \textbf{Batch} & \textbf{Drop} & \textbf{Opt} & \textbf{Arch} & \textbf{Val MAE} \\
+\midrule
+1  & 0.0010 & 32 & 0.5 & adam & simple\_cnn & 120.8008 \\
+4  & 0.0001 & 16 & 0.5 & adam & simple\_cnn & 128.9553 \\
+8  & 0.0001 & 32 & 0.5 & sgd  & simple\_cnn & 129.5413 \\
+10 & 0.0001 & 32 & 0.5 & adam & deep\_cnn   & 133.0673 \\
+6  & 0.0001 & 32 & 0.3 & adam & simple\_cnn & 134.3752 \\
+\bottomrule
+\end{tabular}%
+}{Hyperparameter experiment results (Top 5 configurations, validation MAE in pixels).}{tab:hyperparameters}
+
+\subsection{Effect of Hyperparameters}
+Figures \ref{fig:hyperparameter_effects} and \ref{fig:hyperparameter_heatmap} summarize the impact of the chosen hyperparameters.
+
+\begin{center}
+    \includegraphics[width=\linewidth]{../outputs/figures/hyperparameter_effects.png}
+    \captionof{figure}{Effect of hyperparameters on validation MAE (experiments).}
+    \label{fig:hyperparameter_effects}
+\end{center}
+\FloatBarrier
+
+\begin{center}
+    \includegraphics[width=\linewidth]{../outputs/figures/hyperparameter_heatmap.png}
+    \captionof{figure}{Heatmap visualization of hyperparameter experiments (experiments).}
+    \label{fig:hyperparameter_heatmap}
+\end{center}
+\FloatBarrier
+
+\section{Results}
+
+\subsection{Final Model Performance}
+Table \ref{tab:metrics} reports MAE/RMSE/MSE/R$^2$ on train/validation/test for the best saved model (denormalized to pixels).
+
+\ColTable{%
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Dataset} & \textbf{MAE (px)} & \textbf{RMSE (px)} & \textbf{MSE} & \textbf{R$^2$} \\
+\midrule
+Training   & 36.2442 & 55.3751  & 3066.4031  & 0.9563 \\
+Validation & 83.1316 & 131.3256 & 17246.4131 & 0.7763 \\
+Test       & 81.0071 & 130.2845 & 16974.0568 & 0.7670 \\
+\bottomrule
+\end{tabular}%
+}{Final model performance metrics (pixels).}{tab:metrics}
+
+\subsection{Prediction Visualization}
+Figure \ref{fig:predictions} shows predicted vs.\ true HC and residuals on the test set.
+
+\begin{center}
+    \includegraphics[width=\linewidth]{../outputs/figures/test_predictions.png}
+    \captionof{figure}{Test set predictions: predicted vs.\ true HC (pixels) and residual plot.}
+    \label{fig:predictions}
+\end{center}
+\FloatBarrier
+
+\subsection{Error Analysis}
+The error distribution is shown in Figure \ref{fig:errors}. Summary statistics on the test set:
+\begin{itemize}
+    \item Mean absolute error: \textbf{81.0071 px}
+    \item Standard deviation of absolute error: \textbf{102.0388}
+    \item Maximum error: \textbf{570.7864}
+    \item Predictions with error $> 5$ px: \textbf{111} (\textbf{91.74\%})
+\end{itemize}
+
+\begin{center}
+    \includegraphics[width=\linewidth]{../outputs/figures/error_distribution.png}
+    \captionof{figure}{Distribution of absolute prediction errors on the test set (pixels).}
+    \label{fig:errors}
+\end{center}
+\FloatBarrier
+
+\section{Leaderboard}
+The HC18 challenge leaderboard typically reports error in \textbf{mm}. In this notebook run, HC labels were extracted and modeled in \textbf{pixels}. A reliable conversion to mm requires per-image pixel spacing (mm/pixel), which is not incorporated here. Therefore, a direct numerical comparison to the leaderboard is not provided in this report.
+
+To enable leaderboard comparison in future work:
+\begin{itemize}
+    \item Retrieve pixel spacing metadata (mm/pixel) for each image (if available).
+    \item Convert labels and predictions from pixels to mm: HC(mm) = HC(px) $\times$ spacing(mm/px).
+\end{itemize}
+
+\section{Discussion}
+
+\subsection{Performance Interpretation}
+The model achieved a test MAE of \textbf{81.01 pixels}. The $R^2$ score of \textbf{0.7670} indicates a moderate-to-strong correlation between predictions and true HC values, but there is still significant error variability across difficult cases.
+
+\subsection{Strengths}
+\begin{itemize}
+    \item Fully automatic pipeline: label extraction $\rightarrow$ preprocessing $\rightarrow$ training $\rightarrow$ evaluation
+    \item Simple CNN architecture with reasonable predictive performance
+    \item Reproducible outputs saved as figures/tables for reporting
+\end{itemize}
+
+\subsection{Limitations}
+\begin{itemize}
+    \item Model predicts HC from the entire image without explicitly localizing the fetal head
+    \item Large errors occur on challenging images (noise, partial views, artifacts)
+    \item Reported units are pixels; missing mm conversion limits clinical interpretability and leaderboard comparison
+\end{itemize}
+
+\subsection{Future Improvements}
+\begin{itemize}
+    \item Add head localization/segmentation to guide regression (multi-task learning)
+    \item Try transfer learning (e.g., ResNet/EfficientNet) adapted for grayscale inputs
+    \item Use attention mechanisms to focus on the head boundary
+    \item Incorporate metadata to convert HC to mm for proper leaderboard comparison
+\end{itemize}
+
+\section{Conclusion}
+This practical work implemented an automated CNN regression system for fetal head circumference estimation from ultrasound images. Using extracted pixel-based HC labels, the final model achieved \textbf{81.01 px} MAE on the test split and demonstrated reasonable predictive capability. Hyperparameter experiments were conducted to evaluate training trade-offs and guide model selection.
+
+\begin{thebibliography}{9}
+\bibitem{hc18}
+MICCAI 2018 Grand Challenge: HC18 - 2D Fetal Head Circumference.
+\end{thebibliography}
+
+\end{multicols}
+
+\end{document}
